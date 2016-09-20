@@ -296,6 +296,101 @@ dumpRenderstate(StateWriter &writer, IDirect3DDevice9 *pDevice)
     writer.endMember();
 }
 
+static void
+dumpBuffers(StateWriter &writer, IDirect3DDevice9 *pDevice)
+{
+    writer.beginMember("buffers");
+    writer.beginObject();
+
+    com_ptr<IDirect3DIndexBuffer9> pIndexBuffer;
+    HRESULT hr;
+
+    hr = pDevice->GetIndices(&pIndexBuffer);
+    if (SUCCEEDED(hr) && pIndexBuffer) {
+        D3DINDEXBUFFER_DESC Desc;
+        hr = pIndexBuffer->GetDesc(&Desc);
+
+        if (SUCCEEDED(hr)) {
+            writer.beginMember("indices");
+            writer.beginObject();
+
+            writer.writeIntMember("Size", Desc.Size);
+            writer.writeIntMember("Type", Desc.Type);
+            writer.writeStringMember("Format", Desc.Format == D3DFMT_INDEX16 ?
+                    "INDEX16" : "INDEX32");
+            writer.writeIntMember("Usage", Desc.Usage);
+
+            void *pbData;
+            hr = pIndexBuffer->Lock(0, 0, &pbData, D3DLOCK_READONLY);
+            if (SUCCEEDED(hr)) {
+                writer.beginMember("raw");
+                writer.beginArray();
+                if (Desc.Format == D3DFMT_INDEX16) {
+                    for (int i = 0; i < Desc.Size / sizeof(uint16_t); i++) {
+                        writer.writeInt(((uint16_t *)pbData)[i]);
+                    }
+                } else {
+                    for (int i = 0; i < Desc.Size / sizeof(uint32_t); i++) {
+                        writer.writeInt(((uint32_t *)pbData)[i]);
+                    }
+                }
+                writer.endArray();
+                writer.endMember(); // data
+
+                pIndexBuffer->Unlock();
+            }
+            writer.endObject();
+            writer.endMember(); // indices
+        }
+    }
+
+    D3DCAPS9 Caps;
+    pDevice->GetDeviceCaps(&Caps);
+
+    for (int i = 0; i < Caps.MaxStreams; i++) {
+        com_ptr<IDirect3DVertexBuffer9> pVertexBuffer;
+        UINT OffsetInBytes;
+        UINT Stride;
+
+        hr = pDevice->GetStreamSource(i, &pVertexBuffer, &OffsetInBytes, &Stride);
+        if (SUCCEEDED(hr) && pVertexBuffer) {
+            D3DVERTEXBUFFER_DESC Desc;
+            hr = pVertexBuffer->GetDesc(&Desc);
+            if (SUCCEEDED(hr)) {
+                char label[64];
+                _snprintf(label, sizeof label, "vertics_%u", i);
+
+                writer.beginMember(label);
+                writer.beginObject();
+                writer.writeIntMember("OffsetInBytes", OffsetInBytes);
+                writer.writeIntMember("Stride", Stride);
+                writer.writeIntMember("Size", Desc.Size);
+                writer.writeIntMember("FVF", Desc.FVF);
+                writer.writeIntMember("Usage", Desc.Usage);
+
+                void *pbData;
+                hr = pVertexBuffer->Lock(0, 0, &pbData, D3DLOCK_READONLY);
+                if (SUCCEEDED(hr)) {
+                    writer.beginMember("raw");
+                    writer.beginArray();
+                    for (int j = 0; j < Desc.Size / sizeof(float); j++) {
+                        writer.writeFloat(((float *)pbData)[j]);
+                    }
+                    writer.endArray();
+                    writer.endMember(); // data
+
+                    pVertexBuffer->Unlock();
+                }
+                writer.endObject();
+                writer.endMember(); // vertics_
+            }
+        }
+    }
+
+    writer.endObject();
+    writer.endMember(); // buffers
+}
+
 void
 dumpDevice(StateWriter &writer, IDirect3DDevice9 *pDevice)
 {
@@ -306,6 +401,8 @@ dumpDevice(StateWriter &writer, IDirect3DDevice9 *pDevice)
     dumpTextures(writer, pDevice);
 
     dumpFramebuffer(writer, pDevice);
+
+    dumpBuffers(writer, pDevice);
 }
 
 void
